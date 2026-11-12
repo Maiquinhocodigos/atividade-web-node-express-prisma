@@ -1,0 +1,71 @@
+name: CI - Migrations e Seed
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  migration-test:
+    name: Testar Migrations e Seed
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blogdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar cliente Prisma
+        run: npx prisma generate
+
+      - name: Executar migrations
+        run: npx prisma migrate deploy
+
+      - name: Popular banco de dados (seed)
+        run: npx tsx prisma/seed.ts
+
+      - name: Verificar estrutura e dados do banco
+        run: npx tsx prisma/verify.ts
+
+  build-docker:
+    name: Build da Imagem Docker
+    runs-on: ubuntu-latest
+    needs: migration-test
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Build da imagem Docker
+        run: docker build -t web2-api:latest .
+
+      - name: Listar imagem gerada
+        run: docker images web2-api
